@@ -3,25 +3,29 @@ import asyncio
 import functools
 import sys
 import pkgutil
-from collections import Mapping
+from collections.abc import Mapping
+from typing import Optional, Iterable, Callable, cast, TypeVar, Any, Coroutine, Tuple, Union
 
+from mypy_extensions import KwArg, VarArg
+from sanic import Sanic, Request
 from sanic.response import HTTPResponse
-from mako.lookup import TemplateLookup
-from sanic.exceptions import ServerError
-from mako.exceptions import TemplateLookupException, text_error_template
+from sanic.exceptions import ServerError, SanicException
+from mako.template import Template    # type: ignore
+from mako.lookup import TemplateLookup    # type: ignore
+from mako.exceptions import TemplateLookupException, text_error_template    # type: ignore
 
-__version__ = '0.5.0'
+__version__ = '0.6.0'
 
-__all__ = ('get_lookup', 'render_template', 'render_template_def',
-           'render_string')
-
+__all__ = ('get_lookup', 'render_template', 'render_template_def', 'render_string', 'SanicMako')
 
 APP_KEY = 'sanic_mako_lookup'
 APP_CONTEXT_PROCESSORS_KEY = 'sanic_mako_context_processors'
 REQUEST_CONTEXT_KEY = 'sanic_mako_context'
 
+F = TypeVar('F', bound=Callable[..., Any])    # pylint: disable=invalid-name
 
-def get_root_path(import_name):
+
+def get_root_path(import_name: str) -> str:
     mod = sys.modules.get(import_name)
     if mod is not None and hasattr(mod, '__file__'):
         return os.path.dirname(os.path.abspath(mod.__file__))
@@ -42,34 +46,42 @@ def get_root_path(import_name):
                            'it\'s a namespace package.  In this case '
                            'the root path needs to be explicitly provided.')
 
-    return os.path.dirname(os.path.abspath(filepath))
+    return cast(str, os.path.dirname(os.path.abspath(filepath)))
 
 
 class TemplateError(RuntimeError):
     """ A template has thrown an error during rendering. """
 
-    def __init__(self, template):
-        super(TemplateError, self).__init__()
+    def __init__(self, template: Union[Template, SanicException]):
+        super().__init__()
         self.einfo = sys.exc_info()
         self.text = text_error_template().render()
         if hasattr(template, 'uri'):
             msg = "Error occurred while rendering template '{0}'"
-            msg = msg.format(template.uri)
+            msg = msg.format(getattr(template, 'uri'))
         else:
             msg = template.args[0]
-        super(TemplateError, self).__init__(msg)
+        super().__init__(msg)
 
 
 class SanicMako:
-    def __init__(self, app=None, pkg_path=None, context_processors=(),
-                 app_key=APP_KEY):
+    context_processors: Iterable[Callable[[Request], dict]]
+
+    def __init__(self,
+                 app: Optional[Sanic] = None,
+                 pkg_path: Optional[str] = None,
+                 context_processors: Iterable[Callable[[Request], dict]] = (),
+                 app_key: str = APP_KEY) -> None:
         self.app = app
 
         if app:
-            self.init_app(app, pkg_path, context_processors)
+            self.init_app(app, pkg_path, context_processors, app_key)
 
-    def init_app(self, app, pkg_path=None, context_processors=(),
-                 app_key=APP_KEY):
+    def init_app(self,
+                 app: Sanic,
+                 pkg_path: Optional[str] = None,
+                 context_processors: Iterable[Callable[[Request], dict]] = (),
+                 app_key: str = APP_KEY) -> TemplateLookup:
 
         if pkg_path is not None and os.path.isdir(pkg_path):
             paths = [pkg_path]
@@ -79,121 +91,121 @@ class SanicMako:
         self.context_processors = context_processors
 
         if context_processors:
-            app[APP_CONTEXT_PROCESSORS_KEY] = context_processors
-            app.middlewares.append(context_processors_middleware)
+            setattr(app, APP_CONTEXT_PROCESSORS_KEY, context_processors)
+            app.register_middleware(context_processors_middleware, "request")
 
-        kw = {
+        kwargs = {
             'input_encoding': app.config.get('MAKO_INPUT_ENCODING', 'utf-8'),
             'module_directory': app.config.get('MAKO_MODULE_DIRECTORY', None),
             'collection_size': app.config.get('MAKO_COLLECTION_SIZE', -1),
             'imports': app.config.get('MAKO_IMPORTS', []),
             'filesystem_checks': app.config.get('MAKO_FILESYSTEM_CHECKS', True),
-            'default_filters': app.config.get('MAKO_DEFAULT_FILTERS', ['str', 'h']),  # noqa
+            'default_filters': app.config.get('MAKO_DEFAULT_FILTERS', ['str', 'h']),    # noqa
             'preprocessor': app.config.get('MAKO_PREPROCESSOR', None),
             'strict_undefined': app.config.get('MAKO_STRICT_UNDEFINED', False),
         }
 
-        setattr(app, app_key, TemplateLookup(directories=paths, **kw))
+        setattr(app, app_key, TemplateLookup(directories=paths, **kwargs))
 
         return getattr(app, app_key)
 
     @staticmethod
-    def template(template_name, app_key=APP_KEY, status=200):
-        def wrapper(func):
+    def template(
+            template_name: str,
+            app_key: str = APP_KEY,
+            status: int = 200) -> Callable[[F], Callable[[VarArg(Any), KwArg(Any)], Coroutine[Any, Any, HTTPResponse]]]:
+
+        def wrapper(func: F) -> Callable[[VarArg(Any), KwArg(Any)], Coroutine[Any, Any, HTTPResponse]]:
+
             @functools.wraps(func)
-            async def wrapped(*args, **kwargs):
+            async def wrapped(*args: Any, **kwargs: Any) -> HTTPResponse:
                 if asyncio.iscoroutinefunction(func):
                     coro = func
                 else:
+                    # noinspection PyDeprecation
                     coro = asyncio.coroutine(func)
                 context = await coro(*args, **kwargs)
                 request = args[-1]
-                response = await render_template(template_name, request, context,
-                                                 app_key=app_key)
+                response = await render_template(template_name, request, context, app_key=app_key)
                 response.status = status
                 return response
+
             return wrapped
+
         return wrapper
 
 
-def get_lookup(app, app_key=APP_KEY):
+def get_lookup(app: Sanic, app_key: str = APP_KEY) -> TemplateLookup:
     return getattr(app, app_key)
 
 
-async def render_string(template_name, request, context, *, app_key=APP_KEY):
+def get_template_with_context(template_name: str,
+                              request: Request,
+                              context: dict,
+                              app_key: str = APP_KEY) -> Tuple[Template, dict]:
     lookup = get_lookup(request.app, app_key)
 
     if lookup is None:
-        raise TemplateError(ServerError(
-            f"Template engine is not initialized, "
-            "call sanic_mako.init_app first", status_code=500))
+        raise TemplateError(
+            ServerError("Template engine is not initialized, "
+                        "call sanic_mako.init_app first", status_code=500))
     try:
         template = lookup.get_template(template_name)
-    except TemplateLookupException as e:
-        raise TemplateError(ServerError(f"Template '{template_name}' not found",
-                                        status_code=500)) from e
+    except TemplateLookupException as exc:
+        raise TemplateError(ServerError(f"Template '{template_name}' not found", status_code=500)) from exc
     if not isinstance(context, Mapping):
-        raise TemplateError(ServerError(
-            "context should be mapping, not {type(context)}", status_code=500))
-    if request.get(REQUEST_CONTEXT_KEY):
-        context = dict(request[REQUEST_CONTEXT_KEY], **context)
+        raise TemplateError(ServerError("context should be mapping, not {type(context)}", status_code=500))
+    if not getattr(request.ctx, REQUEST_CONTEXT_KEY, None):
+        context = dict(getattr(request.ctx, REQUEST_CONTEXT_KEY, None), **context)
+    return template, context
+
+
+async def render_string(template_name: str, request: Request, context: dict, *, app_key: str = APP_KEY) -> str:
+    template, context = get_template_with_context(template_name, request, context, app_key)
     try:
         text = template.render(request=request, app=request.app, **context)
-    except Exception:
+    except Exception as exc:
         translate = request.app.config.get("MAKO_TRANSLATE_EXCEPTIONS", False)
         if translate:
             template.uri = template_name
-            raise TemplateError(template)
-        else:
-            raise
+            raise TemplateError(template) from exc
+        raise Exception from exc
 
-    return text
+    return cast(str, text)
 
 
-async def render_template_def(template_name, def_name, request, context, *,
-                              app_key=APP_KEY):
-    lookup = get_lookup(request.app, app_key)
-
-    if lookup is None:
-        raise TemplateError(ServerError(
-            f"Template engine is not initialized, "
-            "call sanic_mako.init_app first", status_code=500))
-    try:
-        template = lookup.get_template(template_name)
-    except TemplateLookupException as e:
-        raise TemplateError(ServerError(f"Template '{template_name}' not found",
-                                        status_code=500)) from e
-    if not isinstance(context, Mapping):
-        raise TemplateError(ServerError(
-            "context should be mapping, not {type(context)}", status_code=500))
-    if request.get(REQUEST_CONTEXT_KEY):
-        context = dict(request[REQUEST_CONTEXT_KEY], **context)
+async def render_template_def(template_name: str,
+                              def_name: str,
+                              request: Request,
+                              context: dict,
+                              *,
+                              app_key: str = APP_KEY) -> str:
+    template, context = get_template_with_context(template_name, request, context, app_key)
     try:
         text = template.get_def(def_name).render(app=request.app, **context)
-    except Exception:
+    except Exception as exc:
         translate = request.app.config.get("MAKO_TRANSLATE_EXCEPTIONS", True)
         if translate:
             template.uri = template_name
-            raise TemplateError(template)
-        else:
-            raise
+            raise TemplateError(template) from exc
+        raise Exception from exc
 
-    return text
+    return cast(str, text)
 
 
-async def render_template(template_name, request, context, *,
-                          content_type=None, app_key=APP_KEY):
+async def render_template(template_name: str,
+                          request: Request,
+                          context: dict,
+                          *,
+                          content_type: Optional[str] = None,
+                          app_key: str = APP_KEY) -> HTTPResponse:
     text = await render_string(template_name, request, context, app_key=app_key)
     if content_type is None:
         content_type = 'text/html'
     return HTTPResponse(text, content_type=content_type)
 
 
-async def context_processors_middleware(app, handler):
-    async def middleware(request):
-        request[REQUEST_CONTEXT_KEY] = {}
-        for processor in app[APP_CONTEXT_PROCESSORS_KEY]:
-            request[REQUEST_CONTEXT_KEY].update(
-                (await processor(request)))
-        return (await handler(request))
-    return middleware
+async def context_processors_middleware(request: Request) -> None:
+    request.ctx[REQUEST_CONTEXT_KEY] = {}
+    for processor in getattr(request.app, APP_CONTEXT_PROCESSORS_KEY):
+        cast(dict, getattr(request.ctx, REQUEST_CONTEXT_KEY)).update((await processor(request)))

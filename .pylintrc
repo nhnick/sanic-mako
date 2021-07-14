@@ -1,0 +1,16 @@
+[MASTER]
+extension-pkg-allow-list=dependency_injector,pydantic,ujson
+
+[DESIGN]
+max-parents=15
+
+[FORMAT]
+good-names=good-names=i,j,k,ex,Run,_,v,d,id
+max-line-length=120
+min-public-methods=1
+disable=logging-fstring-interpolation
+
+[SIMILARITIES]
+min-similarity-lines=4
+ignore-comments=yes
+ignore-imports=yes
