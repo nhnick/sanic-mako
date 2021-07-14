@@ -10,7 +10,7 @@ import codecs
 from setuptools import setup
 
 with codecs.open(os.path.join(os.path.abspath(os.path.dirname(
-        __file__)), 'sanic_mako.py'), 'r', 'latin1') as fp:
+        __file__)), 'sanic_mako/__init__.py'), 'r', 'latin1') as fp:
     try:
         version = re.findall(r"^__version__ = '([^']+)'$", fp.read(), re.M)[0]
     except IndexError:
