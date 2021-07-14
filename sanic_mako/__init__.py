@@ -141,7 +141,7 @@ def get_lookup(app: Sanic, app_key: str = APP_KEY) -> TemplateLookup:
 
 def get_template_with_context(template_name: str,
                               request: Request,
-                              context: dict,
+                              context: Mapping,
                               app_key: str = APP_KEY) -> Tuple[Template, dict]:
     lookup = get_lookup(request.app, app_key)
 
@@ -160,7 +160,7 @@ def get_template_with_context(template_name: str,
     return template, context
 
 
-async def render_string(template_name: str, request: Request, context: dict, *, app_key: str = APP_KEY) -> str:
+async def render_string(template_name: str, request: Request, context: Mapping, *, app_key: str = APP_KEY) -> str:
     template, context = get_template_with_context(template_name, request, context, app_key)
     try:
         text = template.render(request=request, app=request.app, **context)
@@ -177,7 +177,7 @@ async def render_string(template_name: str, request: Request, context: dict, *, 
 async def render_template_def(template_name: str,
                               def_name: str,
                               request: Request,
-                              context: dict,
+                              context: Mapping,
                               *,
                               app_key: str = APP_KEY) -> str:
     template, context = get_template_with_context(template_name, request, context, app_key)
@@ -195,7 +195,7 @@ async def render_template_def(template_name: str,
 
 async def render_template(template_name: str,
                           request: Request,
-                          context: dict,
+                          context: Mapping,
                           *,
                           content_type: Optional[str] = None,
                           app_key: str = APP_KEY) -> HTTPResponse:
