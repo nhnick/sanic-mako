@@ -25,13 +25,13 @@ setup(
     author_email='ciici123@gmail.com',
     description='Mako templating support for Sanic.',
     long_description=__doc__,
-    packages='sanic_mako',
+    packages=['sanic_mako'],
     package_data={
         '': ['py.typed'],
     },
     zip_safe=False,
     platforms='any',
-    install_requires=['Werkzeug', 'Mako'],
+    install_requires=['Sanic', 'Mako'],
     classifiers=[
         'Framework :: AsyncIO',
         'Environment :: Web Environment',
