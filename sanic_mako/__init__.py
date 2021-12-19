@@ -155,7 +155,7 @@ def get_template_with_context(template_name: str,
         raise TemplateError(ServerError(f"Template '{template_name}' not found", status_code=500)) from exc
     if not isinstance(context, Mapping):
         raise TemplateError(ServerError("context should be mapping, not {type(context)}", status_code=500))
-    if not getattr(request.ctx, REQUEST_CONTEXT_KEY, None):
+    if getattr(request.ctx, REQUEST_CONTEXT_KEY, None):
         context = dict(getattr(request.ctx, REQUEST_CONTEXT_KEY, None), **context)
     return template, context
 
