@@ -14,7 +14,7 @@ from mako.template import Template    # type: ignore
 from mako.lookup import TemplateLookup    # type: ignore
 from mako.exceptions import TemplateLookupException, text_error_template    # type: ignore
 
-__version__ = '0.6.1'
+__version__ = '0.6.2'
 
 __all__ = ('get_lookup', 'render_template', 'render_template_def', 'render_string', 'SanicMako')
 
@@ -91,7 +91,7 @@ class SanicMako:
         self.context_processors = context_processors
 
         if context_processors:
-            app.ctx[APP_CONTEXT_PROCESSORS_KEY] = context_processors
+            setattr(app.ctx, APP_CONTEXT_PROCESSORS_KEY, context_processors)
             app.register_middleware(context_processors_middleware, "request")
 
         kwargs = {
@@ -105,8 +105,8 @@ class SanicMako:
             'strict_undefined': app.config.get('MAKO_STRICT_UNDEFINED', False),
         }
 
-        app.ctx[app_key] = TemplateLookup(directories=paths, **kwargs)
-        return app.ctx[app_key]
+        setattr(app.ctx, app_key, TemplateLookup(directories=paths, **kwargs))
+        return getattr(app.ctx, app_key)
 
     @staticmethod
     def template(
@@ -135,7 +135,7 @@ class SanicMako:
 
 
 def get_lookup(app: Sanic, app_key: str = APP_KEY) -> TemplateLookup:
-    return app.ctx[app_key]
+    return getattr(app.ctx, app_key)
 
 
 def get_template_with_context(template_name: str,
@@ -206,5 +206,5 @@ async def render_template(template_name: str,
 
 async def context_processors_middleware(request: Request) -> None:
     request.ctx[REQUEST_CONTEXT_KEY] = {}
-    for processor in request.app.ctx[APP_CONTEXT_PROCESSORS_KEY]:
+    for processor in getattr(request.app.ctx, APP_CONTEXT_PROCESSORS_KEY):
         cast(dict, getattr(request.ctx, REQUEST_CONTEXT_KEY)).update((await processor(request)))
