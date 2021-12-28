@@ -14,7 +14,7 @@ from mako.template import Template    # type: ignore
 from mako.lookup import TemplateLookup    # type: ignore
 from mako.exceptions import TemplateLookupException, text_error_template    # type: ignore
 
-__version__ = '0.6.0'
+__version__ = '0.6.1'
 
 __all__ = ('get_lookup', 'render_template', 'render_template_def', 'render_string', 'SanicMako')
 
