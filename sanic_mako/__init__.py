@@ -91,7 +91,7 @@ class SanicMako:
         self.context_processors = context_processors
 
         if context_processors:
-            setattr(app, APP_CONTEXT_PROCESSORS_KEY, context_processors)
+            app.ctx[APP_CONTEXT_PROCESSORS_KEY] = context_processors
             app.register_middleware(context_processors_middleware, "request")
 
         kwargs = {
@@ -105,9 +105,8 @@ class SanicMako:
             'strict_undefined': app.config.get('MAKO_STRICT_UNDEFINED', False),
         }
 
-        setattr(app, app_key, TemplateLookup(directories=paths, **kwargs))
-
-        return getattr(app, app_key)
+        app.ctx[app_key] = TemplateLookup(directories=paths, **kwargs)
+        return app.ctx[app_key]
 
     @staticmethod
     def template(
@@ -136,13 +135,13 @@ class SanicMako:
 
 
 def get_lookup(app: Sanic, app_key: str = APP_KEY) -> TemplateLookup:
-    return getattr(app, app_key)
+    return app.ctx[app_key]
 
 
 def get_template_with_context(template_name: str,
                               request: Request,
                               context: Mapping,
-                              app_key: str = APP_KEY) -> Tuple[Template, dict]:
+                              app_key: str = APP_KEY) -> Tuple[Template, Mapping]:
     lookup = get_lookup(request.app, app_key)
 
     if lookup is None:
@@ -207,5 +206,5 @@ async def render_template(template_name: str,
 
 async def context_processors_middleware(request: Request) -> None:
     request.ctx[REQUEST_CONTEXT_KEY] = {}
-    for processor in getattr(request.app, APP_CONTEXT_PROCESSORS_KEY):
+    for processor in request.app.ctx[APP_CONTEXT_PROCESSORS_KEY]:
         cast(dict, getattr(request.ctx, REQUEST_CONTEXT_KEY)).update((await processor(request)))
